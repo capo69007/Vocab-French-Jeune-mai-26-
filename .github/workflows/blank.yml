@@ -1,15 +1,14 @@
 name: Vocab Français Jeune – Quotidien
-
+ 
 on:
   schedule:
-    # Tous les jours à 7h30 heure de Paris (heure d'été UTC+2)
     - cron: '30 5 * * *'
-  workflow_dispatch: # Permet de lancer manuellement depuis GitHub
-
+  workflow_dispatch:
+ 
 jobs:
   vocab-du-jour:
     runs-on: ubuntu-latest
-
+ 
     steps:
       - name: Générer le vocab et envoyer par email
         env:
@@ -22,40 +21,51 @@ jobs:
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
             -d '{
-              "model": "claude-haiku-4-5",
+              "model": "claude-haiku-4-5-20251001",
               "max_tokens": 800,
               "messages": [{
                 "role": "user",
-                "content": "Tu es un expert du langage jeune français contemporain (argot, verlan, expressions orales, nuances de sens).\n\nGénère 2 mots ou expressions du langage jeune français que je ne connais pas encore.\n\nMots déjà envoyés à exclure absolument :\nc'\''est stellaire / lunaire, la marche est trop haute, la complétude, très opératoire, être matrixé, zinzin, claqué au sol, dinguerie, passif agressif, binks, dédave, dét, en PLS, en soumsoum, wokisme, woke washing, éducloré, au regard de, mon driver c'\''est, ça va cracher, sous le manteau, mon besoin primaire, jpp, il flex, à quelle h, il y a des punto à gagner.\n\nFormat de réponse EXACTEMENT ainsi :\n\n🗣️ Vocab du jour – [DATE]\n\n1. [MOT/EXPRESSION]\n➤ Définition : [définition claire en 1 phrase]\n💬 Exemple : \"[phrase d'\''exemple réaliste]\"\n\n2. [MOT/EXPRESSION]\n➤ Définition : [définition claire en 1 phrase]\n💬 Exemple : \"[phrase d'\''exemple réaliste]\"\n\nRemplace [DATE] par la date du jour en français (ex: mercredi 10 juin 2026). Choisis des mots vraiment utilisés par les jeunes Français aujourd'\''hui, variés dans le registre (pas que de l'\''argot de banlieue, aussi des expressions de la culture internet, du milieu étudiant, etc.)."
+                "content": "Tu es un expert du langage jeune francais contemporain. Genere 2 mots ou expressions du langage jeune francais. Mots a exclure : stellaire, lunaire, matrixe, zinzin, claque au sol, dinguerie, binks, dedave, det, en PLS, soumsoum, jpp, il flex, punto. Format : 1. [MOT] : [definition]. Exemple : [exemple]. 2. [MOT] : [definition]. Exemple : [exemple]."
               }]
             }')
-
-          # ── 2. Extraire le texte de la réponse ──────────────────────────
+ 
+          echo "=== REPONSE API ==="
+          echo "$RESPONSE"
+          echo "==================="
+ 
+          # ── 2. Extraire le texte ──────────────────────────────────────────
           MESSAGE=$(echo "$RESPONSE" | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          print(data['content'][0]['text'])
-          ")
-
-          # ── 3. Envoyer par email via Outlook SMTP ────────────────────────
+import sys, json
+data = json.load(sys.stdin)
+if 'error' in data:
+    print('ERREUR API: ' + data['error']['message'])
+else:
+    print(data['content'][0]['text'])
+")
+ 
+          echo "=== MESSAGE ==="
+          echo "$MESSAGE"
+          echo "==============="
+ 
+          # ── 3. Envoyer par email ─────────────────────────────────────────
           python3 << PYEOF
-          import smtplib
-          import os
-          from email.mime.text import MIMEText
-          from email.mime.multipart import MIMEMultipart
-
-          msg = MIMEMultipart()
-          msg['From'] = 'jean.vieville.immo69@outlook.com'
-          msg['To'] = 'caporali.nicolas@gmail.com'
-          msg['Subject'] = '🗣️ Vocab français jeune du jour'
-
-          body = """$MESSAGE"""
-          msg.attach(MIMEText(body, 'plain', 'utf-8'))
-
-          with smtplib.SMTP('smtp-mail.outlook.com', 587) as server:
-              server.starttls()
-              server.login('jean.vieville.immo69@outlook.com', os.environ['OUTLOOK_PASSWORD'])
-              server.sendmail('jean.vieville.immo69@outlook.com', 'caporali.nicolas@gmail.com', msg.as_string())
-
-          print("✅ Email envoyé !")
-          PYEOF
+import smtplib
+import os
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+ 
+message = """$MESSAGE"""
+ 
+msg = MIMEMultipart()
+msg['From'] = 'jean.vieville.immo69@outlook.com'
+msg['To'] = 'caporali.nicolas@gmail.com'
+msg['Subject'] = 'Vocab francais jeune du jour'
+msg.attach(MIMEText(message, 'plain', 'utf-8'))
+ 
+with smtplib.SMTP('smtp-mail.outlook.com', 587) as server:
+    server.starttls()
+    server.login('jean.vieville.immo69@outlook.com', os.environ['OUTLOOK_PASSWORD'])
+    server.sendmail('jean.vieville.immo69@outlook.com', 'caporali.nicolas@gmail.com', msg.as_string())
+ 
+print("Email envoye !")
+PYEOF
