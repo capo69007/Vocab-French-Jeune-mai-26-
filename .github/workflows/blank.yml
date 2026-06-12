@@ -1,36 +1,61 @@
-# This is a basic workflow to help you get started with Actions
+name: Vocab Français Jeune – Quotidien
 
-name: CI
-
-# Controls when the workflow will run
 on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  schedule:
+    # Tous les jours à 7h30 heure de Paris (heure d'été UTC+2)
+    - cron: '30 5 * * *'
+  workflow_dispatch: # Permet de lancer manuellement depuis GitHub
 
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
-
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
+  vocab-du-jour:
     runs-on: ubuntu-latest
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
-
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
-
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - name: Générer le vocab et envoyer par email
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OUTLOOK_PASSWORD: ${{ secrets.OUTLOOK_PASSWORD }}
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          # ── 1. Appel Claude API ──────────────────────────────────────────
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d '{
+              "model": "claude-haiku-4-5",
+              "max_tokens": 800,
+              "messages": [{
+                "role": "user",
+                "content": "Tu es un expert du langage jeune français contemporain (argot, verlan, expressions orales, nuances de sens).\n\nGénère 2 mots ou expressions du langage jeune français que je ne connais pas encore.\n\nMots déjà envoyés à exclure absolument :\nc'\''est stellaire / lunaire, la marche est trop haute, la complétude, très opératoire, être matrixé, zinzin, claqué au sol, dinguerie, passif agressif, binks, dédave, dét, en PLS, en soumsoum, wokisme, woke washing, éducloré, au regard de, mon driver c'\''est, ça va cracher, sous le manteau, mon besoin primaire, jpp, il flex, à quelle h, il y a des punto à gagner.\n\nFormat de réponse EXACTEMENT ainsi :\n\n🗣️ Vocab du jour – [DATE]\n\n1. [MOT/EXPRESSION]\n➤ Définition : [définition claire en 1 phrase]\n💬 Exemple : \"[phrase d'\''exemple réaliste]\"\n\n2. [MOT/EXPRESSION]\n➤ Définition : [définition claire en 1 phrase]\n💬 Exemple : \"[phrase d'\''exemple réaliste]\"\n\nRemplace [DATE] par la date du jour en français (ex: mercredi 10 juin 2026). Choisis des mots vraiment utilisés par les jeunes Français aujourd'\''hui, variés dans le registre (pas que de l'\''argot de banlieue, aussi des expressions de la culture internet, du milieu étudiant, etc.)."
+              }]
+            }')
+
+          # ── 2. Extraire le texte de la réponse ──────────────────────────
+          MESSAGE=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          print(data['content'][0]['text'])
+          ")
+
+          # ── 3. Envoyer par email via Outlook SMTP ────────────────────────
+          python3 << PYEOF
+          import smtplib
+          import os
+          from email.mime.text import MIMEText
+          from email.mime.multipart import MIMEMultipart
+
+          msg = MIMEMultipart()
+          msg['From'] = 'jean.vieville.immo69@outlook.com'
+          msg['To'] = 'caporali.nicolas@gmail.com'
+          msg['Subject'] = '🗣️ Vocab français jeune du jour'
+
+          body = """$MESSAGE"""
+          msg.attach(MIMEText(body, 'plain', 'utf-8'))
+
+          with smtplib.SMTP('smtp-mail.outlook.com', 587) as server:
+              server.starttls()
+              server.login('jean.vieville.immo69@outlook.com', os.environ['OUTLOOK_PASSWORD'])
+              server.sendmail('jean.vieville.immo69@outlook.com', 'caporali.nicolas@gmail.com', msg.as_string())
+
+          print("✅ Email envoyé !")
+          PYEOF
