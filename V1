@@ -1,0 +1,46 @@
+name: Vocab Français Jeune – Quotidien
+
+on:
+  schedule:
+    # Tous les jours à 7h30 heure de Paris (6h30 UTC en hiver, 5h30 UTC en été)
+    # Ajuste selon la saison – ici réglé pour l'heure d'été (UTC+2)
+    - cron: '30 5 * * *'
+  workflow_dispatch: # Permet de lancer manuellement depuis GitHub
+
+jobs:
+  vocab-du-jour:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Générer le vocab et envoyer sur Slack
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          # ── 1. Appel Claude API ──────────────────────────────────────────
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d '{
+              "model": "claude-haiku-4-5",
+              "max_tokens": 800,
+              "messages": [{
+                "role": "user",
+                "content": "Tu es un expert du langage jeune français contemporain (argot, verlan, expressions orales, nuances de sens).\n\nGénère 2 mots ou expressions du langage jeune français que je ne connais pas encore.\n\nMots déjà envoyés à exclure absolument :\nc'\''est stellaire / lunaire, la marche est trop haute, la complétude, très opératoire, être matrixé, zinzin, claqué au sol, dinguerie, passif agressif, binks, dédave, dét, en PLS, en soumsoum, wokisme, woke washing, éducloré, au regard de, mon driver c'\''est, ça va cracher, sous le manteau, mon besoin primaire, jpp, il flex, à quelle h, il y a des punto à gagner.\n\nFormat de réponse EXACTEMENT ainsi (pour Slack) :\n\n*🗣️ Vocab du jour – [DATE]*\n\n*1. [MOT/EXPRESSION]*\n➤ Définition : [définition claire en 1 phrase]\n💬 Exemple : _\"[phrase d'\''exemple réaliste]\"_\n\n*2. [MOT/EXPRESSION]*\n➤ Définition : [définition claire en 1 phrase]\n💬 Exemple : _\"[phrase d'\''exemple réaliste]\"_\n\nRemplace [DATE] par la date du jour en français (ex: mercredi 10 juin 2026). Choisis des mots vraiment utilisés par les jeunes Français aujourd'\''hui, variés dans le registre (pas que de l'\''argot de banlieue, aussi des expressions de la culture internet, du milieu étudiant, etc.)."
+              }]
+            }')
+
+          # ── 2. Extraire le texte de la réponse ──────────────────────────
+          MESSAGE=$(echo "$RESPONSE" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          print(data['content'][0]['text'])
+          ")
+
+          # ── 3. Envoyer sur Slack ─────────────────────────────────────────
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\": $(echo "$MESSAGE" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read()))")}"
+
+          echo "✅ Vocab du jour envoyé sur Slack !"
